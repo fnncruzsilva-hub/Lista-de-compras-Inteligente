@@ -29,7 +29,8 @@ import {
   Minus,
   Eye,
   EyeOff,
-  ShieldCheck
+  ShieldCheck,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -289,9 +290,14 @@ export default function App() {
       <header className="sticky top-0 z-40 ios-blur border-b border-zinc-200/50 dark:border-zinc-800/50 px-6 pt-12 pb-6">
         <div className="max-w-2xl mx-auto">
           <div className="flex items-center justify-between mb-2">
-            <div>
-              <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.1em] mb-0.5">Smart Shopping</p>
-              <h1 className="text-3xl font-extrabold tracking-tight">Minha Lista</h1>
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-primary rounded-2xl flex items-center justify-center text-white shadow-lg shadow-primary/20 rotate-3 hover:rotate-0 transition-transform duration-300">
+                <Sparkles size={28} />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.1em] mb-0.5">Smart Shopping</p>
+                <h1 className="text-3xl font-extrabold tracking-tight">Minha Lista</h1>
+              </div>
             </div>
             
             <button 
