@@ -49,16 +49,30 @@ import { BASIC_BASKET_ITEMS, CATEGORIES } from './constants';
 export default function App() {
   // --- State ---
   const [items, setItems] = useState<ShoppingItem[]>(() => {
-    const saved = localStorage.getItem('shopping-items');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('shopping-items');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error('Failed to parse shopping-items', e);
+      return [];
+    }
   });
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('theme');
-    return saved === 'dark';
+    try {
+      const saved = localStorage.getItem('theme');
+      return saved === 'dark';
+    } catch (e) {
+      return false;
+    }
   });
   const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('user');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem('user');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      console.error('Failed to parse user', e);
+      return null;
+    }
   });
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   
@@ -850,20 +864,26 @@ export default function App() {
               <div key={entry.id} className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-2">
                 <div className="flex justify-between items-start">
                   <div>
-                    <p className="text-xs font-bold text-zinc-400 uppercase">{new Date(entry.date).toLocaleString('pt-BR')}</p>
-                    <p className="font-bold text-primary">R$ {entry.total_price.toFixed(2)}</p>
+                    <p className="text-xs font-bold text-zinc-400 uppercase">
+                      {isNaN(new Date(entry.date).getTime()) 
+                        ? entry.date 
+                        : new Date(entry.date).toLocaleString('pt-BR')}
+                    </p>
+                    <p className="font-bold text-primary">
+                      R$ {(entry.total_price || (entry as any).totalPrice || 0).toFixed(2)}
+                    </p>
                   </div>
                   <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-lg font-bold">
-                    {entry.total_items} itens
+                    {(entry.total_items || (entry as any).totalItems || 0)} itens
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {entry.items.slice(0, 5).map(item => (
+                  {(entry.items || []).slice(0, 5).map((item: any) => (
                     <span key={item.id} className="text-[10px] bg-zinc-200 dark:bg-zinc-800 px-2 py-0.5 rounded-full text-zinc-500">
                       {item.name}
                     </span>
                   ))}
-                  {entry.items.length > 5 && <span className="text-[10px] text-zinc-400">+{entry.items.length - 5} mais</span>}
+                  {(entry.items || []).length > 5 && <span className="text-[10px] text-zinc-400">+{(entry.items || []).length - 5} mais</span>}
                 </div>
               </div>
             ))}
