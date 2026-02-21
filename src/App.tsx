@@ -144,14 +144,17 @@ export default function App() {
     try {
       const q = query(
         collection(db, "historico"), 
-        where("userId", "==", user.id),
-        orderBy("date", "desc")
+        where("userId", "==", user.id)
       );
       const querySnapshot = await getDocs(q);
       const data = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as any[];
+      
+      // Sort in memory to avoid index requirement
+      data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
       setHistory(data);
     } catch (e) {
       console.error('Failed to fetch history', e);
@@ -170,8 +173,8 @@ export default function App() {
       setShowAuthModal(false);
       setAuthEmail('');
       setAuthPassword('');
-    } catch (error: any) {
-      setAuthError(error.message || 'Erro na autenticação');
+    } catch (err: any) {
+      setAuthError(err.message || 'Erro na autenticação');
     }
   };
 
@@ -192,9 +195,9 @@ export default function App() {
     try {
       await addDoc(collection(db, "historico"), {
         userId: user.id,
-        date: new Date().toLocaleString("pt-BR"),
-        totalItems: items.length,
-        totalPrice,
+        date: new Date().toISOString(),
+        total_items: items.length,
+        total_price: totalPrice,
         items
       });
       
@@ -315,7 +318,7 @@ export default function App() {
             
             <button 
               onClick={() => user ? setShowLogoutModal(true) : setShowAuthModal(true)}
-              className="flex items-center gap-2 p-1 pr-3 bg-zinc-200/50 dark:bg-zinc-800/50 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
+              className="flex items-center gap-2 p-1 pr-3 bg-zinc-200/50 dark:bg-zinc-800/50 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all active:scale-95"
             >
               <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center text-white">
                 <UserIcon size={14} />
@@ -736,7 +739,7 @@ export default function App() {
           <div className="space-y-3">
             <button 
               onClick={saveToHistory}
-              className="w-full py-4 bg-primary text-white rounded-2xl font-bold shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
+              className="w-full py-4 bg-primary text-white rounded-2xl font-bold shadow-lg shadow-primary/20 flex items-center justify-center gap-2 active:scale-[0.98] active:shadow-inner transition-all"
             >
               <Save size={20} />
               Salvar no Histórico
@@ -788,7 +791,7 @@ export default function App() {
           </div>
           <button 
             type="submit"
-            className="w-full py-4 bg-primary text-white rounded-2xl font-bold shadow-lg shadow-primary/20 hover:bg-primary-dark transition-all"
+            className="w-full py-4 bg-primary text-white rounded-2xl font-bold shadow-lg shadow-primary/20 hover:bg-primary-dark transition-all active:scale-[0.98] active:shadow-inner"
           >
             {authMode === 'login' ? 'Entrar' : 'Cadastrar'}
           </button>
@@ -818,7 +821,7 @@ export default function App() {
             <button onClick={() => setShowLogoutModal(false)} className="flex-1 py-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl font-bold">Cancelar</button>
             <button 
               onClick={() => { handleLogout(); setShowLogoutModal(false); }} 
-              className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold flex items-center justify-center gap-2"
+              className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-all"
             >
               <LogOut size={18} />
               Sair Agora
@@ -834,7 +837,7 @@ export default function App() {
             <p className="text-zinc-500">Faça login para ver seu histórico de compras.</p>
             <button 
               onClick={() => { setShowHistoryModal(false); setShowAuthModal(true); }}
-              className="px-6 py-2 bg-primary text-white rounded-xl font-bold"
+              className="px-6 py-2 bg-primary text-white rounded-xl font-bold active:scale-95 transition-all"
             >
               Fazer Login
             </button>
@@ -847,7 +850,7 @@ export default function App() {
               <div key={entry.id} className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-2">
                 <div className="flex justify-between items-start">
                   <div>
-                    <p className="text-xs font-bold text-zinc-400 uppercase">{entry.date}</p>
+                    <p className="text-xs font-bold text-zinc-400 uppercase">{new Date(entry.date).toLocaleString('pt-BR')}</p>
                     <p className="font-bold text-primary">R$ {entry.total_price.toFixed(2)}</p>
                   </div>
                   <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-lg font-bold">
@@ -889,7 +892,7 @@ const Modal = ({ isOpen, onClose, title, children, icon: Icon }: any) => (
               {Icon && <Icon size={20} className="text-primary" />}
               <h3 className="text-lg font-bold tracking-tight">{title}</h3>
             </div>
-            <button onClick={onClose} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-full transition-colors">
+            <button onClick={onClose} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-full transition-colors active:scale-90">
               <X size={16} className="text-zinc-500" />
             </button>
           </div>
