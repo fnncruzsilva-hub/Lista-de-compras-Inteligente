@@ -7,29 +7,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-    <script type="module">
-
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyB3W3SG5RdPBeSHDSKB4qtZVvGuctERMxI",
-  authDomain: "listou-app-5535f.firebaseapp.com",
-  projectId: "listou-app-5535f",
-  storageBucket: "listou-app-5535f.firebasestorage.app",
-  messagingSenderId: "221502013994",
-  appId: "1:221502013994:web:25a35708c1fbec65f67953"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-console.log("Firebase conectado!");
-
-</script>
   </body>
 </html>
 

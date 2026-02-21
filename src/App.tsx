@@ -1,3 +1,5 @@
+import { auth } from "./firebase";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, 
@@ -115,23 +117,20 @@ export default function App() {
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
     try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: authEmail, password: authPassword })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setUser(data);
-        localStorage.setItem('user', JSON.stringify(data));
-        setShowAuthModal(false);
-        setAuthEmail('');
-        setAuthPassword('');
-      } else {
-        setAuthError(data.error || 'Erro na autenticação');
-      }
+  if (authMode === 'login') {
+    await signInWithEmailAndPassword(auth, authEmail, authPassword);
+  } else {
+    await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+  }
+
+  setShowAuthModal(false);
+  setAuthEmail('');
+  setAuthPassword('');
+
+} catch (error) {
+  setAuthError(error.message);
+}
     } catch (e) {
       setAuthError('Erro ao conectar ao servidor');
     }
