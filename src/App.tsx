@@ -1,10 +1,18 @@
-import { auth } from "./firebase";
+import { auth, db } from "./firebase";
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   onAuthStateChanged,
   signOut 
 } from "firebase/auth";
+import { 
+  collection, 
+  addDoc, 
+  getDocs, 
+  query, 
+  where, 
+  orderBy 
+} from "firebase/firestore";
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, 
@@ -134,8 +142,16 @@ export default function App() {
   const fetchHistory = async () => {
     if (!user) return;
     try {
-      const res = await fetch(`/api/history/${user.id}`);
-      const data = await res.json();
+      const q = query(
+        collection(db, "historico"), 
+        where("userId", "==", user.id),
+        orderBy("date", "desc")
+      );
+      const querySnapshot = await getDocs(q);
+      const data = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as any[];
       setHistory(data);
     } catch (e) {
       console.error('Failed to fetch history', e);
@@ -174,30 +190,14 @@ export default function App() {
       return;
     }
     try {
-   import { db } from "./firebase";
-import { collection, addDoc } from "firebase/firestore";
-
-const saveToHistory = async () => {
-  if (!user) {
-    setShowAuthModal(true);
-    return;
-  }
-
-  try {
-    await addDoc(collection(db, "historico"), {
-      userId: user.uid,
-      date: new Date().toLocaleString("pt-BR"),
-      totalItems: items.length,
-      totalPrice,
-      items
-    });
-
-    alert("Histórico salvo!");
-  } catch (e) {
-    console.error("Erro ao salvar:", e);
-  }
-};
+      await addDoc(collection(db, "historico"), {
+        userId: user.id,
+        date: new Date().toLocaleString("pt-BR"),
+        totalItems: items.length,
+        totalPrice,
+        items
       });
+      
       fetchHistory();
       setShowSuccessModal(false);
       handleReset();
