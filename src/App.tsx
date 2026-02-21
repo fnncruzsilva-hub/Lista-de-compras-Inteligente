@@ -17,7 +17,9 @@ import {
   X,
   Trophy,
   FileText,
-  Save
+  Save,
+  Edit3,
+  Minus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -59,8 +61,10 @@ export default function App() {
   // Add Item Form
   const [newItemName, setNewItemName] = useState('');
   const [newItemQty, setNewItemQty] = useState(1);
+  const [newItemPrice, setNewItemPrice] = useState<number | ''>('');
   const [newItemUnit, setNewItemUnit] = useState('unidade');
   const [newItemCategory, setNewItemCategory] = useState<Category>('Mercearia');
+  const [editingItem, setEditingItem] = useState<ShoppingItem | null>(null);
 
   // Expanded Categories
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>(() => {
@@ -68,6 +72,14 @@ export default function App() {
     CATEGORIES.forEach(cat => initial[cat.name] = true);
     return initial;
   });
+
+  const totalPrice = useMemo(() => {
+    return items.reduce((acc, item) => acc + (item.price || 0) * item.quantity, 0);
+  }, [items]);
+
+  const boughtPrice = useMemo(() => {
+    return items.filter(i => i.bought).reduce((acc, item) => acc + (item.price || 0) * item.quantity, 0);
+  }, [items]);
 
   // --- Effects ---
   useEffect(() => {
@@ -136,7 +148,6 @@ export default function App() {
       setShowAuthModal(true);
       return;
     }
-    const totalPrice = items.reduce((acc, item) => acc + (item.price || 0), 0);
     try {
       await fetch('/api/history', {
         method: 'POST',
@@ -164,12 +175,15 @@ export default function App() {
       id: Math.random().toString(36).substr(2, 9),
       name: newItemName,
       quantity: newItemQty,
+      price: newItemPrice === '' ? undefined : newItemPrice,
       unit: newItemUnit,
       category: newItemCategory,
       bought: false
     };
     setItems([...items, newItem]);
     setNewItemName('');
+    setNewItemQty(1);
+    setNewItemPrice('');
     setShowAddModal(false);
   };
 
@@ -182,7 +196,8 @@ export default function App() {
   };
 
   const updateItem = (id: string, updates: Partial<ShoppingItem>) => {
-    setItems(items.map(item => item.id === id ? { ...item, ...updates } : item));
+    setItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+    setEditingItem(prev => (prev && prev.id === id) ? { ...prev, ...updates } : prev);
   };
 
   const handleReset = () => {
@@ -234,7 +249,6 @@ export default function App() {
 
   // --- Helpers ---
   const progress = items.length > 0 ? Math.round((items.filter(i => i.bought).length / items.length) * 100) : 0;
-  const totalPrice = items.reduce((acc, item) => acc + (item.price || 0), 0);
 
   const groupedItems = useMemo(() => {
     const groups: Record<string, ShoppingItem[]> = {};
@@ -357,21 +371,19 @@ export default function App() {
                             </span>
                             <div className="flex items-center gap-3 mt-0.5">
                               <button 
-                                className="text-[12px] font-medium text-zinc-400 hover:text-primary"
+                                className="text-[12px] font-medium text-zinc-400 hover:text-primary bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  const val = prompt('Quantidade:', item.quantity.toString());
-                                  if (val) updateItem(item.id, { quantity: parseFloat(val) });
+                                  setEditingItem(item);
                                 }}
                               >
                                 {item.quantity} {item.unit}
                               </button>
                               <button 
-                                className="text-[12px] font-medium text-zinc-400 hover:text-primary"
+                                className="text-[12px] font-medium text-zinc-400 hover:text-primary bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  const val = prompt('Preço (R$):', (item.price || 0).toString());
-                                  if (val) updateItem(item.id, { price: parseFloat(val) });
+                                  setEditingItem(item);
                                 }}
                               >
                                 {item.price ? `R$ ${item.price.toFixed(2)}` : 'R$ 0,00'}
@@ -393,6 +405,25 @@ export default function App() {
               </section>
             );
           })
+        )}
+
+        {items.length > 0 && (
+          <div className="px-6 pb-40">
+            <div className="ios-list-group p-4 space-y-3">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-zinc-400 font-medium">Total da Lista</span>
+                <span className="font-bold">R$ {totalPrice.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-zinc-400 font-medium">Já Comprado</span>
+                <span className="font-bold text-emerald-500">R$ {boughtPrice.toFixed(2)}</span>
+              </div>
+              <div className="pt-2 border-t border-ios-border flex justify-between items-center">
+                <span className="text-xs font-bold uppercase text-zinc-400">Restante</span>
+                <span className="text-lg font-black text-primary">R$ {(totalPrice - boughtPrice).toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
         )}
       </main>
 
@@ -477,12 +508,24 @@ export default function App() {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Unidade</label>
-              <select 
-                value={newItemUnit}
-                onChange={e => setNewItemUnit(e.target.value)}
+              <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Preço (R$)</label>
+              <input 
+                type="number" 
+                step="0.01"
+                value={newItemPrice}
+                onChange={e => setNewItemPrice(e.target.value === '' ? '' : parseFloat(e.target.value))}
                 className="w-full p-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl border-none focus:ring-2 focus:ring-primary outline-none"
-              >
+                placeholder="0,00"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Unidade</label>
+            <select 
+              value={newItemUnit}
+              onChange={e => setNewItemUnit(e.target.value)}
+              className="w-full p-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl border-none focus:ring-2 focus:ring-primary outline-none"
+            >
                 <option value="unidade">unidade</option>
                 <option value="kg">kg</option>
                 <option value="g">g</option>
@@ -492,7 +535,6 @@ export default function App() {
                 <option value="caixa">caixa</option>
               </select>
             </div>
-          </div>
           <div>
             <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Categoria</label>
             <div className="grid grid-cols-2 gap-2">
@@ -513,6 +555,91 @@ export default function App() {
           >
             Adicionar à Lista
           </button>
+        </div>
+      </Modal>
+
+      {/* Edit Item Modal */}
+      <Modal 
+        isOpen={!!editingItem} 
+        onClose={() => setEditingItem(null)} 
+        title={`Editar Item`} 
+        icon={Edit3}
+      >
+        <div className="space-y-6">
+          <div>
+            <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Nome do Produto</label>
+            <input 
+              type="text" 
+              value={editingItem?.name || ''}
+              onChange={e => editingItem && updateItem(editingItem.id, { name: e.target.value })}
+              className="w-full p-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl border-none focus:ring-2 focus:ring-primary outline-none font-semibold"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Quantidade</label>
+              <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 rounded-xl overflow-hidden">
+                <button 
+                  onClick={() => editingItem && updateItem(editingItem.id, { quantity: Math.max(0, editingItem.quantity - 1) })}
+                  className="p-3 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-primary"
+                >
+                  <Minus size={18} />
+                </button>
+                <input 
+                  type="number" 
+                  value={editingItem?.quantity || 0}
+                  onChange={e => editingItem && updateItem(editingItem.id, { quantity: parseFloat(e.target.value) || 0 })}
+                  className="w-full bg-transparent text-center font-bold outline-none py-3"
+                />
+                <button 
+                  onClick={() => editingItem && updateItem(editingItem.id, { quantity: editingItem.quantity + 1 })}
+                  className="p-3 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-primary"
+                >
+                  <Plus size={18} />
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Preço Unit. (R$)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 font-bold">R$</span>
+                <input 
+                  type="number" 
+                  step="0.01"
+                  value={editingItem?.price || ''}
+                  onChange={e => editingItem && updateItem(editingItem.id, { price: parseFloat(e.target.value) || 0 })}
+                  className="w-full p-3 pl-10 bg-zinc-100 dark:bg-zinc-800 rounded-xl border-none focus:ring-2 focus:ring-primary outline-none font-bold"
+                  placeholder="0,00"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Categoria</label>
+            <div className="grid grid-cols-3 gap-2">
+              {CATEGORIES.map(cat => (
+                <button 
+                  key={cat.name}
+                  onClick={() => editingItem && updateItem(editingItem.id, { category: cat.name as Category })}
+                  className={`p-2 text-[10px] rounded-lg border transition-all ${editingItem?.category === cat.name ? 'border-primary bg-primary/10 text-primary font-bold' : 'border-zinc-200 dark:border-zinc-800 text-zinc-500'}`}
+                >
+                  {cat.icon} {cat.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <div className="pt-2">
+            <button 
+              onClick={() => setEditingItem(null)}
+              className="w-full py-4 bg-primary text-white rounded-2xl font-bold shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
+            >
+              <CheckCircle2 size={20} />
+              Salvar Alterações
+            </button>
+          </div>
         </div>
       </Modal>
 
