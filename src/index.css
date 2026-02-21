@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #A855F7; /* Purple 500 */
+  --color-primary-dark: #9333EA; /* Purple 600 */
+  --color-ios-gray: #8E8E93;
+  
+  /* Dynamic colors based on CSS variables */
+  --color-ios-bg: var(--ios-bg);
+  --color-ios-card: var(--ios-card);
+  --color-ios-text: var(--ios-text);
+  --color-ios-border: var(--ios-border);
+}
+
+/* Enable class-based dark mode for Tailwind v4 */
+@variant dark (&:where(.dark, .dark *));
+
+:root {
+  --ios-bg: #F2F2F7;
+  --ios-card: #FFFFFF;
+  --ios-text: #000000;
+  --ios-border: rgba(0, 0, 0, 0.1);
+  color-scheme: light;
+}
+
+.dark {
+  --ios-bg: #000000;
+  --ios-card: #1C1C1E;
+  --ios-text: #FFFFFF;
+  --ios-border: rgba(255, 255, 255, 0.1);
+  color-scheme: dark;
+}
+
+@layer base {
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    @apply transition-colors duration-300 bg-ios-bg text-ios-text;
+  }
+}
+
+/* iOS Blur Effect */
+.ios-blur {
+  @apply bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl;
+}
+
+/* iOS Inset Grouped List Style */
+.ios-list-group {
+  @apply mx-4 my-2 rounded-xl overflow-hidden bg-ios-card;
+}
+
+.ios-list-item {
+  @apply flex items-center px-4 py-3 border-b border-ios-border last:border-b-0 active:bg-zinc-100 dark:active:bg-zinc-800 transition-colors;
+}
+
