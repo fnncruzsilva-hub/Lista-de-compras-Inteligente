@@ -19,7 +19,7 @@ export interface ShoppingItem {
 }
 
 export interface HistoryEntry {
-  id: number;
+  id: string | number;
   date: string;
   total_items: number;
   total_price: number;
@@ -27,6 +27,6 @@ export interface HistoryEntry {
 }
 
 export interface User {
-  id: number;
+  id: string | number;
   email: string;
 }

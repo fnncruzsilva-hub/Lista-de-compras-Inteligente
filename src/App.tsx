@@ -1,5 +1,10 @@
 import { auth } from "./firebase";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  onAuthStateChanged,
+  signOut 
+} from "firebase/auth";
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, 
@@ -21,7 +26,10 @@ import {
   FileText,
   Save,
   Edit3,
-  Minus
+  Minus,
+  Eye,
+  EyeOff,
+  ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -52,12 +60,14 @@ export default function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   // Auth Form
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState('');
 
   // Add Item Form
@@ -97,6 +107,23 @@ export default function App() {
   }, [isDarkMode]);
 
   useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        const userData: User = {
+          id: firebaseUser.uid,
+          email: firebaseUser.email || ''
+        };
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+      } else {
+        setUser(null);
+        localStorage.removeItem('user');
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
     if (user) {
       fetchHistory();
     }
@@ -118,28 +145,26 @@ export default function App() {
     e.preventDefault();
     setAuthError('');
     try {
-  if (authMode === 'login') {
-    await signInWithEmailAndPassword(auth, authEmail, authPassword);
-  } else {
-    await createUserWithEmailAndPassword(auth, authEmail, authPassword);
-  }
-
-  setShowAuthModal(false);
-  setAuthEmail('');
-  setAuthPassword('');
-
-} catch (error) {
-  setAuthError(error.message);
-}
-    } catch (e) {
-      setAuthError('Erro ao conectar ao servidor');
+      if (authMode === 'login') {
+        await signInWithEmailAndPassword(auth, authEmail, authPassword);
+      } else {
+        await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+      }
+      setShowAuthModal(false);
+      setAuthEmail('');
+      setAuthPassword('');
+    } catch (error: any) {
+      setAuthError(error.message || 'Erro na autenticação');
     }
   };
 
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('user');
-    setHistory([]);
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setHistory([]);
+    } catch (e) {
+      console.error('Failed to logout', e);
+    }
   };
 
   const saveToHistory = async () => {
@@ -270,7 +295,7 @@ export default function App() {
             </div>
             
             <button 
-              onClick={() => user ? handleLogout() : setShowAuthModal(true)}
+              onClick={() => user ? setShowLogoutModal(true) : setShowAuthModal(true)}
               className="flex items-center gap-2 p-1 pr-3 bg-zinc-200/50 dark:bg-zinc-800/50 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
             >
               <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center text-white">
@@ -449,6 +474,15 @@ export default function App() {
                 onClick={() => { setShowPdfModal(true); setIsMenuOpen(false); }}
                 delay={0.15}
               />
+              {user && (
+                <FloatingAction 
+                  icon={LogOut} 
+                  label="Sair com Segurança" 
+                  onClick={() => { setShowLogoutModal(true); setIsMenuOpen(false); }}
+                  color="bg-zinc-100/80 dark:bg-zinc-800/80"
+                  delay={0.18}
+                />
+              )}
               <FloatingAction 
                 icon={RotateCcw} 
                 label="Limpar Lista" 
@@ -715,14 +749,23 @@ export default function App() {
           </div>
           <div>
             <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Senha</label>
-            <input 
-              type="password" 
-              required
-              value={authPassword}
-              onChange={e => setAuthPassword(e.target.value)}
-              className="w-full p-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl border-none focus:ring-2 focus:ring-primary outline-none"
-              placeholder="••••••••"
-            />
+            <div className="relative">
+              <input 
+                type={showPassword ? "text" : "password"} 
+                required
+                value={authPassword}
+                onChange={e => setAuthPassword(e.target.value)}
+                className="w-full p-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl border-none focus:ring-2 focus:ring-primary outline-none pr-12"
+                placeholder="••••••••"
+              />
+              <button 
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors"
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
           </div>
           <button 
             type="submit"
@@ -741,6 +784,28 @@ export default function App() {
             </button>
           </p>
         </form>
+      </Modal>
+
+      {/* Logout Modal */}
+      <Modal 
+        isOpen={showLogoutModal} 
+        onClose={() => setShowLogoutModal(false)} 
+        title="Sair com Segurança" 
+        icon={ShieldCheck}
+      >
+        <div className="text-center space-y-6">
+          <p className="text-zinc-500">Deseja encerrar sua sessão com segurança? Seus dados locais serão preservados, mas você precisará entrar novamente para acessar o histórico em nuvem.</p>
+          <div className="flex gap-3">
+            <button onClick={() => setShowLogoutModal(false)} className="flex-1 py-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl font-bold">Cancelar</button>
+            <button 
+              onClick={() => { handleLogout(); setShowLogoutModal(false); }} 
+              className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold flex items-center justify-center gap-2"
+            >
+              <LogOut size={18} />
+              Sair Agora
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* History Modal */}
