@@ -152,6 +152,8 @@ export default function App() {
     }
   }, [user]);
 
+  const [isSaving, setIsSaving] = useState(false);
+
   // --- API Calls ---
   const fetchHistory = async () => {
     if (!user) return;
@@ -206,20 +208,39 @@ export default function App() {
       setShowAuthModal(true);
       return;
     }
+    setIsSaving(true);
     try {
-      await addDoc(collection(db, "historico"), {
-        userId: user.id,
-        date: new Date().toISOString(),
-        total_items: items.length,
-        total_price: totalPrice,
-        items
-      });
+      const safeTotalPrice = typeof totalPrice === 'number' && !isNaN(totalPrice) ? totalPrice : 0;
       
-      fetchHistory();
+      const sanitizedItems = items.map(item => ({
+        id: item.id || Math.random().toString(36).substring(7),
+        name: item.name || 'Sem nome',
+        quantity: Number(item.quantity) || 0,
+        unit: item.unit || 'unidade',
+        category: item.category || 'Mercearia',
+        bought: Boolean(item.bought),
+        price: typeof item.price === 'number' && !isNaN(item.price) ? item.price : 0
+      }));
+
+      const payload = {
+        userId: String(user.id),
+        date: new Date().toISOString(),
+        total_items: Number(items.length) || 0,
+        total_price: safeTotalPrice,
+        items: sanitizedItems
+      };
+
+      await addDoc(collection(db, "historico"), payload);
+      
+      await fetchHistory();
       setShowSuccessModal(false);
       handleReset();
-    } catch (e) {
+      alert('Compra salva com sucesso!');
+    } catch (e: any) {
       console.error('Failed to save history', e);
+      alert('Erro ao salvar: ' + (e.message || 'Erro desconhecido'));
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -753,10 +774,11 @@ export default function App() {
           <div className="space-y-3">
             <button 
               onClick={saveToHistory}
-              className="w-full py-4 bg-primary text-white rounded-2xl font-bold shadow-lg shadow-primary/20 flex items-center justify-center gap-2 active:scale-[0.98] active:shadow-inner transition-all"
+              disabled={isSaving}
+              className={`w-full py-4 bg-primary text-white rounded-2xl font-bold shadow-lg shadow-primary/20 flex items-center justify-center gap-2 active:scale-[0.98] active:shadow-inner transition-all ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              <Save size={20} />
-              Salvar no Histórico
+              <Save size={20} className={isSaving ? 'animate-spin' : ''} />
+              {isSaving ? 'Salvando...' : 'Salvar no Histórico'}
             </button>
             <button 
               onClick={() => { setShowSuccessModal(false); handleReset(); }}
