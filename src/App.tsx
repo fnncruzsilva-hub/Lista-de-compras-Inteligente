@@ -174,16 +174,29 @@ export default function App() {
       return;
     }
     try {
-      await fetch('/api/history', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          date: new Date().toLocaleString('pt-BR'),
-          totalItems: items.length,
-          totalPrice,
-          items
-        })
+   import { db } from "./firebase";
+import { collection, addDoc } from "firebase/firestore";
+
+const saveToHistory = async () => {
+  if (!user) {
+    setShowAuthModal(true);
+    return;
+  }
+
+  try {
+    await addDoc(collection(db, "historico"), {
+      userId: user.uid,
+      date: new Date().toLocaleString("pt-BR"),
+      totalItems: items.length,
+      totalPrice,
+      items
+    });
+
+    alert("Histórico salvo!");
+  } catch (e) {
+    console.error("Erro ao salvar:", e);
+  }
+};
       });
       fetchHistory();
       setShowSuccessModal(false);
