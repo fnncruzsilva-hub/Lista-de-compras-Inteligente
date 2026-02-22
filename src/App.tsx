@@ -500,20 +500,35 @@ export default function App() {
       nome = palavras.join(" ");
     }
 
-    const newItem: ShoppingItem = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: nome.charAt(0).toUpperCase() + nome.slice(1),
-      quantity: quantidade,
-      price: preco,
-      unit: 'un',
-      category: 'Mercearia', // Default category
-      bought: false,
-      addedBy: user?.email.split('@')[0] || 'Anônimo'
-    };
+    const capitalizedName = nome.charAt(0).toUpperCase() + nome.slice(1);
 
-    const newList = [...items, newItem];
-    setItems(newList);
-    syncActiveList(newList);
+    if (showAddModal) {
+      setNewItemName(capitalizedName);
+      setNewItemQty(quantidade);
+      if (preco !== undefined) setNewItemPrice(preco);
+    } else {
+      const newItem: ShoppingItem = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: capitalizedName,
+        quantity: quantidade,
+        price: preco,
+        unit: 'unidade',
+        category: 'Mercearia', 
+        bought: false,
+        addedBy: user?.email.split('@')[0] || 'Anônimo'
+      };
+
+      const newList = [...items, newItem];
+      setItems(newList);
+      syncActiveList(newList);
+      
+      // Visual feedback
+      const toast = document.createElement('div');
+      toast.className = 'fixed top-24 left-1/2 -translate-x-1/2 bg-primary text-white px-6 py-3 rounded-full shadow-2xl z-[100] font-bold text-sm animate-bounce';
+      toast.innerText = `🛒 Adicionado: ${capitalizedName}`;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
   };
 
   const startVoice = () => {
@@ -531,7 +546,13 @@ export default function App() {
 
     recognition.onstart = () => setIsListening(true);
     recognition.onend = () => setIsListening(false);
-    recognition.onerror = () => setIsListening(false);
+    recognition.onerror = (event: any) => {
+      setIsListening(false);
+      console.error("Speech recognition error", event.error);
+      if (event.error === 'not-allowed') {
+        alert("Microfone bloqueado. Por favor, permita o acesso nas configurações do navegador.");
+      }
+    };
 
     recognition.onresult = (event: any) => {
       const texto = event.results[0][0].transcript;
