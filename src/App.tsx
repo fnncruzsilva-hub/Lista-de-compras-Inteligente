@@ -11,7 +11,9 @@ import {
   getDocs, 
   query, 
   where, 
-  orderBy 
+  orderBy,
+  deleteDoc,
+  doc 
 } from "firebase/firestore";
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
@@ -43,6 +45,17 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { 
+  LineChart, 
+  Line, 
+  XAxis, 
+  YAxis, 
+  Tooltip, 
+  CartesianGrid, 
+  ResponsiveContainer,
+  AreaChart,
+  Area
+} from "recharts";
 import { ShoppingItem, Category, HistoryEntry, User } from './types';
 import { BASIC_BASKET_ITEMS, CATEGORIES } from './constants';
 
@@ -115,6 +128,29 @@ export default function App() {
   const boughtPrice = useMemo(() => {
     return items.filter(i => i.bought).reduce((acc, item) => acc + (item.price || 0) * item.quantity, 0);
   }, [items]);
+
+  const chartData = useMemo(() => {
+    const gastosPorMes: Record<string, number> = {};
+    
+    // Sort history by date ascending for the chart
+    const sortedHistory = [...history].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    sortedHistory.forEach(h => {
+      const data = new Date(h.date);
+      if (isNaN(data.getTime())) return;
+      
+      const mes = data.toLocaleString("pt-BR", { month: "short", year: "2-digit" });
+      const price = Number(h.total_price || (h as any).totalPrice || 0);
+      
+      if (!gastosPorMes[mes]) gastosPorMes[mes] = 0;
+      gastosPorMes[mes] += price;
+    });
+
+    return Object.keys(gastosPorMes).map(mes => ({
+      mes,
+      total: gastosPorMes[mes]
+    }));
+  }, [history]);
 
   // --- Effects ---
   useEffect(() => {
@@ -244,6 +280,18 @@ export default function App() {
       alert('Erro ao salvar: ' + (e.message || 'Erro desconhecido'));
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const deleteHistoryEntry = async (id: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este registro do histórico?')) return;
+    
+    try {
+      await deleteDoc(doc(db, "historico", id));
+      setHistory(prev => prev.filter(h => h.id !== id));
+    } catch (e) {
+      console.error('Failed to delete history entry', e);
+      alert('Erro ao excluir registro');
     }
   };
 
@@ -527,6 +575,58 @@ export default function App() {
         {/* History Section on Screen */}
         {user && (
           <div className="mt-12 mb-20">
+            {/* Analytics Chart */}
+            {chartData.length > 0 && (
+              <div className="mb-12">
+                <div className="flex items-center gap-2 mb-6 px-2">
+                  <Sparkles size={20} className="text-primary" />
+                  <h2 className="text-xl font-black tracking-tight">📊 Gastos por Mês</h2>
+                </div>
+                <div className="p-6 bg-white dark:bg-zinc-900 rounded-[2.5rem] border border-ios-border shadow-sm h-[300px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData}>
+                      <defs>
+                        <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                      <XAxis 
+                        dataKey="mes" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fontSize: 10, fontWeight: 600, fill: '#94a3b8' }}
+                        dy={10}
+                      />
+                      <YAxis 
+                        hide 
+                      />
+                      <Tooltip 
+                        contentStyle={{ 
+                          borderRadius: '16px', 
+                          border: 'none', 
+                          boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                          fontSize: '12px',
+                          fontWeight: 'bold'
+                        }}
+                        formatter={(value: number) => [`R$ ${value.toFixed(2)}`, 'Total']}
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey="total" 
+                        stroke="#a855f7" 
+                        strokeWidth={4}
+                        fillOpacity={1} 
+                        fill="url(#colorTotal)" 
+                        animationDuration={1500}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-2 mb-6 px-2">
               <HistoryIcon size={20} className="text-primary" />
               <h2 className="text-xl font-black tracking-tight">📜 Histórico de Compras</h2>
@@ -576,6 +676,13 @@ export default function App() {
                         >
                           <Download size={12} />
                           Baixar
+                        </button>
+                        <button 
+                          onClick={() => deleteHistoryEntry(String(h.id))}
+                          className="p-2 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all flex items-center gap-1 text-[10px] font-bold"
+                          title="Excluir do Histórico"
+                        >
+                          <Trash2 size={12} />
                         </button>
                       </div>
                       <div className="flex -space-x-2">
@@ -999,6 +1106,12 @@ export default function App() {
                       >
                         <Download size={10} />
                         Baixar
+                      </button>
+                      <button 
+                        onClick={() => deleteHistoryEntry(String(entry.id))}
+                        className="px-2 py-1 bg-red-500 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 active:scale-90 transition-all"
+                      >
+                        <Trash2 size={10} />
                       </button>
                     </div>
                   </div>
