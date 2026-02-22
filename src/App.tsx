@@ -293,7 +293,7 @@ export default function App() {
     setItems([...items, ...newItems]);
   };
 
-  const generatePdf = (itemsToExport: ShoppingItem[], exportDate: string) => {
+  const generatePdf = (itemsToExport: ShoppingItem[], exportDate: string, action: 'view' | 'download' = 'download') => {
     const doc = new jsPDF();
     const formattedDate = isNaN(new Date(exportDate).getTime()) 
       ? exportDate 
@@ -326,7 +326,13 @@ export default function App() {
       theme: 'grid'
     });
 
-    doc.save(`lista-compras-${formattedDate.replace(/\//g, '-')}.pdf`);
+    if (action === 'view') {
+      const blob = doc.output('blob');
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } else {
+      doc.save(`lista-compras-${formattedDate.replace(/\//g, '-')}.pdf`);
+    }
   };
 
   const exportPdf = () => {
@@ -551,17 +557,25 @@ export default function App() {
                       </div>
                     </div>
                     <div className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-800">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-zinc-500">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-zinc-500 mr-1">
                           {(h.total_items || (h as any).totalItems || 0)} itens
                         </span>
                         <button 
-                          onClick={() => generatePdf(h.items, h.date)}
-                          className="p-2 bg-primary/10 text-primary rounded-xl hover:bg-primary hover:text-white transition-all flex items-center gap-1 text-[10px] font-bold"
-                          title="Baixar PDF desta compra"
+                          onClick={() => generatePdf(h.items, h.date, 'view')}
+                          className="p-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl hover:bg-zinc-200 transition-all flex items-center gap-1 text-[10px] font-bold"
+                          title="Visualizar PDF"
                         >
-                          <FileText size={12} />
-                          PDF
+                          <Eye size={12} />
+                          Ver
+                        </button>
+                        <button 
+                          onClick={() => generatePdf(h.items, h.date, 'download')}
+                          className="p-2 bg-primary/10 text-primary rounded-xl hover:bg-primary hover:text-white transition-all flex items-center gap-1 text-[10px] font-bold"
+                          title="Baixar PDF"
+                        >
+                          <Download size={12} />
+                          Baixar
                         </button>
                       </div>
                       <div className="flex -space-x-2">
@@ -968,9 +982,25 @@ export default function App() {
                         ? entry.date 
                         : new Date(entry.date).toLocaleString('pt-BR')}
                     </p>
-                    <p className="font-bold text-primary">
-                      R$ {(entry.total_price || (entry as any).totalPrice || 0).toFixed(2)}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="font-bold text-primary">
+                        R$ {(entry.total_price || (entry as any).totalPrice || 0).toFixed(2)}
+                      </p>
+                      <button 
+                        onClick={() => generatePdf(entry.items, entry.date, 'view')}
+                        className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-lg text-[10px] font-bold flex items-center gap-1 active:scale-90 transition-all"
+                      >
+                        <Eye size={10} />
+                        Ver
+                      </button>
+                      <button 
+                        onClick={() => generatePdf(entry.items, entry.date, 'download')}
+                        className="px-2 py-1 bg-primary text-white rounded-lg text-[10px] font-bold flex items-center gap-1 active:scale-90 transition-all"
+                      >
+                        <Download size={10} />
+                        Baixar
+                      </button>
+                    </div>
                   </div>
                   <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-lg font-bold">
                     {(entry.total_items || (entry as any).totalItems || 0)} itens
