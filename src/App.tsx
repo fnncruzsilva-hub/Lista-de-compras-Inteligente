@@ -232,6 +232,9 @@ export default function App() {
 
       await addDoc(collection(db, "historico"), payload);
       
+      // Also generate PDF automatically to ensure they are the same
+      generatePdf(sanitizedItems, payload.date);
+      
       await fetchHistory();
       setShowSuccessModal(false);
       handleReset();
@@ -290,19 +293,24 @@ export default function App() {
     setItems([...items, ...newItems]);
   };
 
-  const exportPdf = () => {
+  const generatePdf = (itemsToExport: ShoppingItem[], exportDate: string) => {
     const doc = new jsPDF();
-    const date = new Date().toLocaleDateString('pt-BR');
+    const formattedDate = isNaN(new Date(exportDate).getTime()) 
+      ? exportDate 
+      : new Date(exportDate).toLocaleDateString('pt-BR');
     
     doc.setFontSize(20);
     doc.setTextColor(168, 85, 247); // Purple
-    doc.text('Smart Shopping - Minha Lista', 14, 22);
+    doc.text('Smart Shopping - Comprovante', 14, 22);
     
     doc.setFontSize(10);
     doc.setTextColor(142, 142, 147); // iOS Gray
-    doc.text(`Data: ${date}`, 14, 30);
+    doc.text(`Data da Lista: ${formattedDate}`, 14, 30);
 
-    const tableData = items.map(item => [
+    const total = itemsToExport.reduce((acc, item) => acc + (item.price || 0) * item.quantity, 0);
+    doc.text(`Valor Total: R$ ${total.toFixed(2)}`, 14, 35);
+
+    const tableData = itemsToExport.map(item => [
       item.bought ? '[X]' : '[ ]',
       item.name,
       `${item.quantity} ${item.unit}`,
@@ -311,14 +319,18 @@ export default function App() {
     ]);
 
     autoTable(doc, {
-      startY: 35,
+      startY: 40,
       head: [['Status', 'Produto', 'Qtd', 'Categoria', 'Preço']],
       body: tableData,
       headStyles: { fillColor: [168, 85, 247] },
       theme: 'grid'
     });
 
-    doc.save(`lista-compras-${date}.pdf`);
+    doc.save(`lista-compras-${formattedDate.replace(/\//g, '-')}.pdf`);
+  };
+
+  const exportPdf = () => {
+    generatePdf(items, new Date().toISOString());
     setShowPdfModal(false);
     setIsMenuOpen(false);
   };
@@ -504,6 +516,71 @@ export default function App() {
                 <span className="text-lg font-black text-primary">R$ {(totalPrice - boughtPrice).toFixed(2)}</span>
               </div>
             </div>
+          </div>
+        )}
+        {/* History Section on Screen */}
+        {user && (
+          <div className="mt-12 mb-20">
+            <div className="flex items-center gap-2 mb-6 px-2">
+              <HistoryIcon size={20} className="text-primary" />
+              <h2 className="text-xl font-black tracking-tight">📜 Histórico de Compras</h2>
+            </div>
+
+            {history.length === 0 ? (
+              <div className="p-8 bg-white dark:bg-zinc-900 rounded-3xl border border-ios-border text-center">
+                <p className="text-zinc-500 font-medium">Nenhuma lista salva ainda</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {history.map(h => (
+                  <div key={h.id} className="p-5 bg-white dark:bg-zinc-900 rounded-3xl border border-ios-border shadow-sm hover:shadow-md transition-all active:scale-[0.99] group">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Data da Compra</p>
+                        <p className="font-bold text-zinc-800 dark:text-zinc-100">
+                          {isNaN(new Date(h.date).getTime()) 
+                            ? h.date 
+                            : new Date(h.date).toLocaleString('pt-BR')}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Total</p>
+                        <p className="font-black text-primary text-lg">
+                          R$ {(h.total_price || (h as any).totalPrice || 0).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-zinc-500">
+                          {(h.total_items || (h as any).totalItems || 0)} itens
+                        </span>
+                        <button 
+                          onClick={() => generatePdf(h.items, h.date)}
+                          className="p-2 bg-primary/10 text-primary rounded-xl hover:bg-primary hover:text-white transition-all flex items-center gap-1 text-[10px] font-bold"
+                          title="Baixar PDF desta compra"
+                        >
+                          <FileText size={12} />
+                          PDF
+                        </button>
+                      </div>
+                      <div className="flex -space-x-2">
+                        {(h.items || []).slice(0, 3).map((item, idx) => (
+                          <div key={idx} className="w-6 h-6 rounded-full bg-primary/10 border-2 border-white dark:border-zinc-900 flex items-center justify-center text-[8px] font-bold text-primary">
+                            {item.name.charAt(0)}
+                          </div>
+                        ))}
+                        {(h.items || []).length > 3 && (
+                          <div className="w-6 h-6 rounded-full bg-zinc-100 dark:bg-zinc-800 border-2 border-white dark:border-zinc-900 flex items-center justify-center text-[8px] font-bold text-zinc-500">
+                            +{(h.items || []).length - 3}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </main>
