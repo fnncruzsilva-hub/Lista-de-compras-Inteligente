@@ -16,6 +16,7 @@ export interface ShoppingItem {
   category: Category;
   bought: boolean;
   price?: number;
+  addedBy?: string;
 }
 
 export interface HistoryEntry {
@@ -24,6 +25,8 @@ export interface HistoryEntry {
   total_items: number;
   total_price: number;
   items: ShoppingItem[];
+  savedBy?: string;
+  casalId?: string | null;
 }
 
 export interface User {

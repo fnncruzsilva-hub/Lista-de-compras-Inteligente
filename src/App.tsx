@@ -13,8 +13,12 @@ import {
   where, 
   orderBy,
   deleteDoc,
-  doc 
+  doc,
+  onSnapshot,
+  updateDoc,
+  setDoc 
 } from "firebase/firestore";
+import { getMessaging, getToken, onMessage } from "firebase/messaging";
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, 
@@ -40,7 +44,11 @@ import {
   Eye,
   EyeOff,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  Copy,
+  RefreshCw,
+  Check,
+  Mic
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -88,6 +96,7 @@ export default function App() {
     }
   });
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [casalId, setCasalId] = useState(() => localStorage.getItem("casalId") || "");
   
   // Modals
   const [showResetModal, setShowResetModal] = useState(false);
@@ -104,6 +113,27 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
+
+  const generateCasalId = () => {
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    setCasalId(code);
+    localStorage.setItem("casalId", code);
+  };
+
+  const copyCasalId = () => {
+    if (!casalId) return;
+    navigator.clipboard.writeText(casalId);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2000);
+  };
+
+  const disconnectCasal = () => {
+    if (window.confirm("Deseja interromper a sincronização de casal?")) {
+      setCasalId("");
+      localStorage.removeItem("casalId");
+    }
+  };
   const [authError, setAuthError] = useState('');
 
   // Add Item Form
@@ -182,36 +212,154 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (user) {
-      fetchHistory();
-    }
-  }, [user]);
-
   const [isSaving, setIsSaving] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+
+  const syncActiveList = async (newItems: ShoppingItem[]) => {
+    if (!user || !casalId) return;
+    try {
+      const q = query(collection(db, "listas_ativas"), where("casalId", "==", casalId));
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) {
+        await addDoc(collection(db, "listas_ativas"), {
+          casalId,
+          items: newItems,
+          updatedAt: new Date().toISOString()
+        });
+      } else {
+        const docId = snapshot.docs[0].id;
+        await updateDoc(doc(db, "listas_ativas", docId), {
+          items: newItems,
+          updatedAt: new Date().toISOString()
+        });
+      }
+    } catch (e) {
+      console.error("Erro ao sincronizar lista ativa:", e);
+    }
+  };
 
   // --- API Calls ---
-  const fetchHistory = async () => {
+  // Real-time History
+  useEffect(() => {
     if (!user) return;
-    try {
-      const q = query(
+    
+    let q;
+    if (casalId) {
+      q = query(
+        collection(db, "historico"), 
+        where("casalId", "==", casalId)
+      );
+    } else {
+      q = query(
         collection(db, "historico"), 
         where("userId", "==", user.id)
       );
-      const querySnapshot = await getDocs(q);
-      const data = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+    }
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(d => ({
+        id: d.id,
+        ...(d.data() as object)
       })) as any[];
       
-      // Sort in memory to avoid index requirement
       data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
       setHistory(data);
-    } catch (e) {
-      console.error('Failed to fetch history', e);
-    }
-  };
+    }, (error) => {
+      if (error.code === 'permission-denied') {
+        console.warn("Permissão negada ao ler histórico. Verifique as regras do Firestore.");
+      } else {
+        console.error("Erro ao carregar histórico:", error);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user, casalId]);
+
+  // Real-time Active List
+  useEffect(() => {
+    if (!user || !casalId) return;
+
+    const q = query(collection(db, "listas_ativas"), where("casalId", "==", casalId));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        const data = snapshot.docs[0].data();
+        const remoteItems = (data.items || []) as ShoppingItem[];
+        
+        setItems(prev => {
+          // Check if someone else added an item
+          if (prev.length > 0 && remoteItems.length > prev.length) {
+            const lastItem = remoteItems[remoteItems.length - 1];
+            const myName = user.email.split('@')[0];
+            if (lastItem.addedBy && lastItem.addedBy !== myName) {
+              // Simple alert for now as requested
+              alert(`🛒 ${lastItem.addedBy} adicionou: ${lastItem.name}`);
+            }
+          }
+
+          if (JSON.stringify(prev) === JSON.stringify(remoteItems)) return prev;
+          return remoteItems;
+        });
+      }
+    }, (error) => {
+      if (error.code === 'permission-denied') {
+        console.warn("Permissão negada na lista ativa. Configure as regras do Firestore para 'listas_ativas'.");
+      } else {
+        console.error("Erro no sincronismo em tempo real:", error);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user, casalId]);
+
+  // Offline Listener
+  useEffect(() => {
+    const handleOffline = () => alert("Sem internet. Salvando offline!");
+    window.addEventListener("offline", handleOffline);
+    return () => window.removeEventListener("offline", handleOffline);
+  }, []);
+
+  // FCM Logic
+  useEffect(() => {
+    if (!user) return;
+
+    const setupMessaging = async () => {
+      try {
+        if (!('Notification' in window)) {
+          console.warn("Este navegador não suporta notificações de desktop");
+          return;
+        }
+
+        const messaging = getMessaging();
+        const permission = await Notification.requestPermission();
+        
+        if (permission === 'granted') {
+          // Note: The user needs to provide their own VAPID key in Firebase Console
+          const token = await getToken(messaging, {
+            vapidKey: "BPl9... (Sua Chave VAPID do Console Firebase)" 
+          });
+          
+          if (token) {
+            await setDoc(doc(db, "fcm_tokens", user.id.toString()), {
+              token,
+              email: user.email,
+              updatedAt: new Date().toISOString()
+            });
+          }
+        }
+
+        onMessage(messaging, (payload) => {
+          console.log('Mensagem recebida: ', payload);
+          if (payload.notification) {
+            alert(`🔔 ${payload.notification.title}: ${payload.notification.body}`);
+          }
+        });
+      } catch (error) {
+        console.error("Erro ao configurar notificações:", error);
+      }
+    };
+
+    setupMessaging();
+  }, [user]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -235,7 +383,7 @@ export default function App() {
       await signOut(auth);
       setHistory([]);
     } catch (e) {
-      console.error('Failed to logout', e);
+      console.error('Erro ao sair', e);
     }
   };
 
@@ -260,6 +408,8 @@ export default function App() {
 
       const payload = {
         userId: String(user.id),
+        casalId: casalId || null,
+        savedBy: user.email.split('@')[0],
         date: new Date().toISOString(),
         total_items: Number(items.length) || 0,
         total_price: safeTotalPrice,
@@ -271,7 +421,6 @@ export default function App() {
       // Also generate PDF automatically to ensure they are the same
       generatePdf(sanitizedItems, payload.date);
       
-      await fetchHistory();
       setShowSuccessModal(false);
       handleReset();
       alert('Compra salva com sucesso!');
@@ -305,30 +454,115 @@ export default function App() {
       price: newItemPrice === '' ? undefined : newItemPrice,
       unit: newItemUnit,
       category: newItemCategory,
-      bought: false
+      bought: false,
+      addedBy: user?.email.split('@')[0] || 'Anônimo'
     };
-    setItems([...items, newItem]);
+    const newList = [...items, newItem];
+    setItems(newList);
+    syncActiveList(newList);
     setNewItemName('');
     setNewItemQty(1);
     setNewItemPrice('');
     setShowAddModal(false);
   };
 
+  const adicionarItemPorTexto = (texto: string) => {
+    const palavras = texto.toLowerCase().split(" ");
+    
+    // Simple parsing logic: "2 leite 8 reais" or "leite"
+    let quantidade = 1;
+    let preco: number | undefined = undefined;
+    let nome = texto;
+
+    // Try to find quantity at the beginning
+    const firstWordAsNum = parseInt(palavras[0]);
+    if (!isNaN(firstWordAsNum)) {
+      quantidade = firstWordAsNum;
+      palavras.shift();
+    }
+
+    // Try to find price at the end (e.g., "8 reais" or "8.50")
+    if (palavras.length >= 2 && (palavras[palavras.length - 1] === 'reais' || palavras[palavras.length - 1] === 'real')) {
+      const priceVal = parseFloat(palavras[palavras.length - 2].replace(',', '.'));
+      if (!isNaN(priceVal)) {
+        preco = priceVal;
+        palavras.splice(-2);
+      }
+    } else {
+      const lastWordAsNum = parseFloat(palavras[palavras.length - 1].replace(',', '.'));
+      if (!isNaN(lastWordAsNum) && palavras.length > 1) {
+        preco = lastWordAsNum;
+        palavras.pop();
+      }
+    }
+
+    if (palavras.length > 0) {
+      nome = palavras.join(" ");
+    }
+
+    const newItem: ShoppingItem = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: nome.charAt(0).toUpperCase() + nome.slice(1),
+      quantity: quantidade,
+      price: preco,
+      unit: 'un',
+      category: 'Mercearia', // Default category
+      bought: false,
+      addedBy: user?.email.split('@')[0] || 'Anônimo'
+    };
+
+    const newList = [...items, newItem];
+    setItems(newList);
+    syncActiveList(newList);
+  };
+
+  const startVoice = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert("Reconhecimento de voz não suportado neste navegador.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "pt-BR";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => setIsListening(true);
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+
+    recognition.onresult = (event: any) => {
+      const texto = event.results[0][0].transcript;
+      adicionarItemPorTexto(texto);
+    };
+
+    recognition.start();
+  };
+
   const toggleItem = (id: string) => {
-    setItems(items.map(item => item.id === id ? { ...item, bought: !item.bought } : item));
+    const newList = items.map(item => item.id === id ? { ...item, bought: !item.bought } : item);
+    setItems(newList);
+    syncActiveList(newList);
   };
 
   const deleteItem = (id: string) => {
-    setItems(items.filter(item => item.id !== id));
+    const newList = items.filter(item => item.id !== id);
+    setItems(newList);
+    syncActiveList(newList);
   };
 
   const updateItem = (id: string, updates: Partial<ShoppingItem>) => {
-    setItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+    const newList = items.map(item => item.id === id ? { ...item, ...updates } : item);
+    setItems(newList);
+    syncActiveList(newList);
     setEditingItem(prev => (prev && prev.id === id) ? { ...prev, ...updates } : prev);
   };
 
   const handleReset = () => {
     setItems([]);
+    syncActiveList([]);
     setShowResetModal(false);
     setIsMenuOpen(false);
   };
@@ -336,9 +570,12 @@ export default function App() {
   const addBasicBasket = () => {
     const newItems = BASIC_BASKET_ITEMS.map(item => ({
       ...item,
-      id: Math.random().toString(36).substr(2, 9)
+      id: Math.random().toString(36).substr(2, 9),
+      addedBy: user?.email.split('@')[0] || 'Anônimo'
     }));
-    setItems([...items, ...newItems]);
+    const newList = [...items, ...newItems];
+    setItems(newList);
+    syncActiveList(newList);
   };
 
   const generatePdf = (itemsToExport: ShoppingItem[], exportDate: string, action: 'view' | 'download' = 'download') => {
@@ -412,22 +649,85 @@ export default function App() {
                 <Sparkles size={28} />
               </div>
               <div>
-                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.1em] mb-0.5">Smart Shopping</p>
+                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.1em] mb-0.5">Compras Inteligentes</p>
                 <h1 className="text-3xl font-extrabold tracking-tight">Minha Lista</h1>
               </div>
             </div>
             
-            <button 
-              onClick={() => user ? setShowLogoutModal(true) : setShowAuthModal(true)}
-              className="flex items-center gap-2 p-1 pr-3 bg-zinc-200/50 dark:bg-zinc-800/50 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all active:scale-95"
-            >
-              <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center text-white">
-                <UserIcon size={14} />
-              </div>
-              <span className="text-[11px] font-bold tracking-tight">
-                {user ? user.email.split('@')[0] : 'Entrar'}
-              </span>
-            </button>
+            <div className="flex flex-col items-end gap-2">
+              <button 
+                onClick={() => user ? setShowLogoutModal(true) : setShowAuthModal(true)}
+                className="flex items-center gap-2 p-1 pr-3 bg-zinc-200/50 dark:bg-zinc-800/50 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all active:scale-95"
+              >
+                <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center text-white">
+                  <UserIcon size={14} />
+                </div>
+                <span className="text-[11px] font-bold tracking-tight">
+                  {user ? user.email.split('@')[0] : 'Entrar'}
+                </span>
+              </button>
+
+              {user && (
+                <div className="flex flex-col items-end gap-1">
+                  <div className="flex items-center gap-2 bg-white/80 dark:bg-zinc-900/80 p-1.5 px-3 rounded-2xl border border-primary/20 shadow-sm backdrop-blur-md">
+                    <div className="flex flex-col">
+                      <span className="text-[8px] font-black text-primary/60 uppercase leading-none mb-1">Sincronização Casal</span>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="text"
+                          placeholder="CRIAR CÓDIGO..."
+                          value={casalId}
+                          onChange={(e) => {
+                            const val = e.target.value.toUpperCase();
+                            setCasalId(val);
+                            localStorage.setItem("casalId", val);
+                          }}
+                          className="bg-transparent border-none outline-none text-[12px] font-black text-primary w-28 placeholder:text-zinc-300 tracking-wider"
+                        />
+                        <div className="flex items-center gap-1 border-l border-primary/10 pl-2">
+                          <button 
+                            onClick={generateCasalId}
+                            className="p-1 text-primary/40 hover:text-primary transition-colors"
+                            title="Gerar novo código"
+                          >
+                            <RefreshCw size={12} />
+                          </button>
+                          {casalId && (
+                            <button 
+                              onClick={copyCasalId}
+                              className="p-1 text-primary/40 hover:text-primary transition-colors"
+                              title="Copiar código"
+                            >
+                              {copySuccess ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                            </button>
+                          )}
+                          {casalId && (
+                            <button 
+                              onClick={disconnectCasal}
+                              className="p-1 text-red-400 hover:text-red-500 transition-colors"
+                              title="Interromper Sincronização"
+                            >
+                              <X size={12} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {casalId ? (
+                    <span className="text-[8px] font-bold text-emerald-500 flex items-center gap-1 px-2">
+                      <span className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
+                      Conectado e Sincronizando
+                    </span>
+                  ) : (
+                    <span className="text-[8px] font-bold text-amber-500 flex items-center gap-1 px-2">
+                      <span className="w-1 h-1 bg-amber-500 rounded-full" />
+                      Modo Local (Offline)
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Progress Bar */}
@@ -508,14 +808,21 @@ export default function App() {
                           className={`ios-list-item group ${item.bought ? 'opacity-50' : ''}`}
                           onClick={() => toggleItem(item.id)}
                         >
-                          <button className={`flex-shrink-0 mr-4 transition-all ${item.bought ? 'text-primary' : 'text-zinc-300 dark:text-zinc-700'}`}>
+                          <button className={`flex-shrink-0 mr-4 transition-all ${item.bought ? 'text-emerald-500' : 'text-zinc-300 dark:text-zinc-700'}`}>
                             {item.bought ? <CheckCircle2 size={22} /> : <Circle size={22} />}
                           </button>
                           
                           <div className="flex-grow min-w-0 py-1">
-                            <span className={`block font-semibold text-[15px] leading-tight ${item.bought ? 'line-through text-zinc-400' : ''}`}>
-                              {item.name}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className={`block font-semibold text-[15px] leading-tight ${item.bought ? 'line-through text-zinc-400' : ''}`}>
+                                {item.name}
+                              </span>
+                              {item.addedBy && (
+                                <span className="text-[9px] font-bold text-primary/40 uppercase tracking-tighter">
+                                  👤 {item.addedBy}
+                                </span>
+                              )}
+                            </div>
                             <div className="flex items-center gap-3 mt-0.5">
                               <button 
                                 className="text-[12px] font-medium text-zinc-400 hover:text-primary bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md"
@@ -648,6 +955,11 @@ export default function App() {
                             ? h.date 
                             : new Date(h.date).toLocaleString('pt-BR')}
                         </p>
+                        {h.savedBy && (
+                          <p className="text-[9px] font-bold text-primary/60 mt-0.5">
+                            Salvo por: {h.savedBy}
+                          </p>
+                        )}
                       </div>
                       <div className="flex flex-col items-end">
                         <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Total</p>
@@ -753,6 +1065,14 @@ export default function App() {
         <div className="flex items-center gap-4">
           <motion.button 
             whileTap={{ scale: 0.9 }}
+            onClick={startVoice}
+            className={`w-12 h-12 rounded-full shadow-xl flex items-center justify-center transition-all backdrop-blur-xl border ${isListening ? 'bg-red-500 text-white border-transparent animate-pulse' : 'bg-white/80 dark:bg-zinc-800/80 text-primary border-white/20 dark:border-zinc-700'}`}
+          >
+            <Mic size={20} />
+          </motion.button>
+
+          <motion.button 
+            whileTap={{ scale: 0.9 }}
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             className={`w-12 h-12 rounded-full shadow-xl flex items-center justify-center transition-all backdrop-blur-xl border ${isMenuOpen ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 border-transparent' : 'bg-white/80 dark:bg-zinc-800/80 text-primary border-white/20 dark:border-zinc-700'}`}
           >
@@ -776,14 +1096,23 @@ export default function App() {
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Produto</label>
-            <input 
-              autoFocus
-              type="text" 
-              value={newItemName}
-              onChange={e => setNewItemName(e.target.value)}
-              className="w-full p-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl border-none focus:ring-2 focus:ring-primary outline-none"
-              placeholder="Ex: Arroz, Leite..."
-            />
+            <div className="relative">
+              <input 
+                autoFocus
+                type="text" 
+                value={newItemName}
+                onChange={e => setNewItemName(e.target.value)}
+                className="w-full p-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl border-none focus:ring-2 focus:ring-primary outline-none pr-12"
+                placeholder="Ex: 2 Leite 8 Reais"
+              />
+              <button 
+                type="button"
+                onClick={startVoice}
+                className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'text-zinc-400 hover:text-primary'}`}
+              >
+                <Mic size={18} />
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1089,6 +1418,11 @@ export default function App() {
                         ? entry.date 
                         : new Date(entry.date).toLocaleString('pt-BR')}
                     </p>
+                    {entry.savedBy && (
+                      <p className="text-[9px] font-bold text-primary/60">
+                        Por: {entry.savedBy}
+                      </p>
+                    )}
                     <div className="flex items-center gap-2 mt-1">
                       <p className="font-bold text-primary">
                         R$ {(entry.total_price || (entry as any).totalPrice || 0).toFixed(2)}
