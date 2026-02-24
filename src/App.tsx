@@ -1,9 +1,10 @@
-import { auth, db } from "./firebase";
+import { auth, db, googleProvider } from "./firebase";
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   onAuthStateChanged,
-  signOut 
+  signOut,
+  signInWithPopup
 } from "firebase/auth";
 import { 
   collection, 
@@ -47,8 +48,7 @@ import {
   Sparkles,
   Copy,
   RefreshCw,
-  Check,
-  Mic
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -213,7 +213,6 @@ export default function App() {
   }, []);
 
   const [isSaving, setIsSaving] = useState(false);
-  const [isListening, setIsListening] = useState(false);
 
   const syncActiveList = async (newItems: ShoppingItem[]) => {
     if (!user || !casalId) return;
@@ -335,7 +334,7 @@ export default function App() {
         if (permission === 'granted') {
           // Note: The user needs to provide their own VAPID key in Firebase Console
           const token = await getToken(messaging, {
-            vapidKey: "BPl9... (Sua Chave VAPID do Console Firebase)" 
+            vapidKey: "BEfXE8HmRA0EmLvnWInfufBFxXsFHTSkmPgAVOd4VGnu2sWTodW2irMbC9m8V8bW1ksKocIY9USahZOgUOoMfr8" 
           });
           
           if (token) {
@@ -375,6 +374,16 @@ export default function App() {
       setAuthPassword('');
     } catch (err: any) {
       setAuthError(err.message || 'Erro na autenticação');
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setAuthError('');
+    try {
+      await signInWithPopup(auth, googleProvider);
+      setShowAuthModal(false);
+    } catch (err: any) {
+      setAuthError(err.message || 'Erro ao entrar com Google');
     }
   };
 
@@ -464,102 +473,6 @@ export default function App() {
     setNewItemQty(1);
     setNewItemPrice('');
     setShowAddModal(false);
-  };
-
-  const adicionarItemPorTexto = (texto: string) => {
-    const palavras = texto.toLowerCase().split(" ");
-    
-    // Simple parsing logic: "2 leite 8 reais" or "leite"
-    let quantidade = 1;
-    let preco: number | undefined = undefined;
-    let nome = texto;
-
-    // Try to find quantity at the beginning
-    const firstWordAsNum = parseInt(palavras[0]);
-    if (!isNaN(firstWordAsNum)) {
-      quantidade = firstWordAsNum;
-      palavras.shift();
-    }
-
-    // Try to find price at the end (e.g., "8 reais" or "8.50")
-    if (palavras.length >= 2 && (palavras[palavras.length - 1] === 'reais' || palavras[palavras.length - 1] === 'real')) {
-      const priceVal = parseFloat(palavras[palavras.length - 2].replace(',', '.'));
-      if (!isNaN(priceVal)) {
-        preco = priceVal;
-        palavras.splice(-2);
-      }
-    } else {
-      const lastWordAsNum = parseFloat(palavras[palavras.length - 1].replace(',', '.'));
-      if (!isNaN(lastWordAsNum) && palavras.length > 1) {
-        preco = lastWordAsNum;
-        palavras.pop();
-      }
-    }
-
-    if (palavras.length > 0) {
-      nome = palavras.join(" ");
-    }
-
-    const capitalizedName = nome.charAt(0).toUpperCase() + nome.slice(1);
-
-    if (showAddModal) {
-      setNewItemName(capitalizedName);
-      setNewItemQty(quantidade);
-      if (preco !== undefined) setNewItemPrice(preco);
-    } else {
-      const newItem: ShoppingItem = {
-        id: Math.random().toString(36).substr(2, 9),
-        name: capitalizedName,
-        quantity: quantidade,
-        price: preco,
-        unit: 'unidade',
-        category: 'Mercearia', 
-        bought: false,
-        addedBy: user?.email.split('@')[0] || 'Anônimo'
-      };
-
-      const newList = [...items, newItem];
-      setItems(newList);
-      syncActiveList(newList);
-      
-      // Visual feedback
-      const toast = document.createElement('div');
-      toast.className = 'fixed top-24 left-1/2 -translate-x-1/2 bg-primary text-white px-6 py-3 rounded-full shadow-2xl z-[100] font-bold text-sm animate-bounce';
-      toast.innerText = `🛒 Adicionado: ${capitalizedName}`;
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
-    }
-  };
-
-  const startVoice = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      alert("Reconhecimento de voz não suportado neste navegador.");
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = "pt-BR";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => setIsListening(true);
-    recognition.onend = () => setIsListening(false);
-    recognition.onerror = (event: any) => {
-      setIsListening(false);
-      console.error("Speech recognition error", event.error);
-      if (event.error === 'not-allowed') {
-        alert("Microfone bloqueado. Por favor, permita o acesso nas configurações do navegador.");
-      }
-    };
-
-    recognition.onresult = (event: any) => {
-      const texto = event.results[0][0].transcript;
-      adicionarItemPorTexto(texto);
-    };
-
-    recognition.start();
   };
 
   const toggleItem = (id: string) => {
@@ -1086,14 +999,6 @@ export default function App() {
         <div className="flex items-center gap-4">
           <motion.button 
             whileTap={{ scale: 0.9 }}
-            onClick={startVoice}
-            className={`w-12 h-12 rounded-full shadow-xl flex items-center justify-center transition-all backdrop-blur-xl border ${isListening ? 'bg-red-500 text-white border-transparent animate-pulse' : 'bg-white/80 dark:bg-zinc-800/80 text-primary border-white/20 dark:border-zinc-700'}`}
-          >
-            <Mic size={20} />
-          </motion.button>
-
-          <motion.button 
-            whileTap={{ scale: 0.9 }}
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             className={`w-12 h-12 rounded-full shadow-xl flex items-center justify-center transition-all backdrop-blur-xl border ${isMenuOpen ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 border-transparent' : 'bg-white/80 dark:bg-zinc-800/80 text-primary border-white/20 dark:border-zinc-700'}`}
           >
@@ -1123,16 +1028,9 @@ export default function App() {
                 type="text" 
                 value={newItemName}
                 onChange={e => setNewItemName(e.target.value)}
-                className="w-full p-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl border-none focus:ring-2 focus:ring-primary outline-none pr-12"
+                className="w-full p-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl border-none focus:ring-2 focus:ring-primary outline-none"
                 placeholder="Ex: 2 Leite 8 Reais"
               />
-              <button 
-                type="button"
-                onClick={startVoice}
-                className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'text-zinc-400 hover:text-primary'}`}
-              >
-                <Mic size={18} />
-              </button>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -1378,6 +1276,29 @@ export default function App() {
             className="w-full py-4 bg-primary text-white rounded-2xl font-bold shadow-lg shadow-primary/20 hover:bg-primary-dark transition-all active:scale-[0.98] active:shadow-inner"
           >
             {authMode === 'login' ? 'Entrar' : 'Cadastrar'}
+          </button>
+
+          <div className="relative py-2">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-zinc-200 dark:border-zinc-800"></div>
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-white dark:bg-zinc-900 px-2 text-zinc-400">Ou continue com</span>
+            </div>
+          </div>
+
+          <button 
+            type="button"
+            onClick={handleGoogleLogin}
+            className="w-full py-4 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 rounded-2xl font-bold border border-zinc-200 dark:border-zinc-700 shadow-sm flex items-center justify-center gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-all active:scale-[0.98]"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
+            Google
           </button>
           <p className="text-center text-sm text-zinc-500">
             {authMode === 'login' ? 'Não tem uma conta?' : 'Já tem uma conta?'}
