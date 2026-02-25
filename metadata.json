@@ -1,5 +1,5 @@
 {
   "name": "Minha Lista de Compra Inteligente",
   "description": "Aplicativo de lista de compras inteligente com sincronização em nuvem via Firebase, exportação de PDF e interface moderna com efeitos táteis.",
-  "requestFramePermissions": ["notifications"]
+  "requestFramePermissions": []
 }

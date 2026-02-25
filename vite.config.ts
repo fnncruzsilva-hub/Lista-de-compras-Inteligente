@@ -12,19 +12,27 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
+        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
         manifest: {
-          name: 'Smart Shopping - Lista Inteligente',
-          short_name: 'SmartShop',
-          description: 'Sua lista de compras inteligente com histórico e analytics',
-          theme_color: '#a855f7',
-          background_color: '#ffffff',
+          name: 'Minha Lista de Compra Inteligente',
+          short_name: 'MinhaLista',
+          description: 'Sua lista de compras inteligente com sincronização em nuvem e analytics',
+          theme_color: '#A855F7',
+          background_color: '#F2F2F7',
           display: 'standalone',
+          orientation: 'portrait',
           icons: [
             {
               src: 'https://cdn-icons-png.flaticon.com/512/3737/3737372.png',
               sizes: '512x512',
               type: 'image/png',
-              purpose: 'any maskable'
+              purpose: 'any'
+            },
+            {
+              src: 'https://cdn-icons-png.flaticon.com/512/3737/3737372.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable'
             }
           ]
         }

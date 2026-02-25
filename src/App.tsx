@@ -9,14 +9,12 @@ import {
 import { 
   collection, 
   addDoc, 
-  getDocs, 
   query, 
   where, 
   orderBy,
   deleteDoc,
   doc,
   onSnapshot,
-  updateDoc,
   setDoc 
 } from "firebase/firestore";
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
@@ -217,21 +215,11 @@ export default function App() {
   const syncActiveList = async (newItems: ShoppingItem[]) => {
     if (!user || !casalId) return;
     try {
-      const q = query(collection(db, "listas_ativas"), where("casalId", "==", casalId));
-      const snapshot = await getDocs(q);
-      if (snapshot.empty) {
-        await addDoc(collection(db, "listas_ativas"), {
-          casalId,
-          items: newItems,
-          updatedAt: new Date().toISOString()
-        });
-      } else {
-        const docId = snapshot.docs[0].id;
-        await updateDoc(doc(db, "listas_ativas", docId), {
-          items: newItems,
-          updatedAt: new Date().toISOString()
-        });
-      }
+      await setDoc(doc(db, "listas_ativas", casalId), {
+        casalId,
+        items: newItems,
+        updatedAt: new Date().toISOString()
+      });
     } catch (e) {
       console.error("Erro ao sincronizar lista ativa:", e);
     }
@@ -278,10 +266,9 @@ export default function App() {
   useEffect(() => {
     if (!user || !casalId) return;
 
-    const q = query(collection(db, "listas_ativas"), where("casalId", "==", casalId));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        const data = snapshot.docs[0].data();
+    const unsubscribe = onSnapshot(doc(db, "listas_ativas", casalId), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
         const remoteItems = (data.items || []) as ShoppingItem[];
         
         setItems(prev => {
